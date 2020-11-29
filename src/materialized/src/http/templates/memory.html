@@ -1,9 +1,55 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
 
-{% block title %}Memory{% endblock %}
+svg {
+    width: 100%;
+    height: auto;
+}
 
-{% block head %}
-<link href="/css/memory.css" rel="stylesheet">
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 10px;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: '\002B';
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 5px;
+}
+
+.active:after {
+  content: "\2212";
+}
+
+.content {
+  padding: 0px 18px;
+  max-height: 0px;
+  overflow: auto;
+  transition: max-height 0.2s ease-out;
+  background-color: #f1f1f1;
+}
+</style>
+</head>
+<body>
+
+<h2>Active Dataflows</h2>
+<div id="content2"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/react@16/umd/react.development.js" crossorigin></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@16/umd/react-dom.development.js" crossorigin></script>
@@ -14,8 +60,6 @@
 <!-- pako is used for zlib compression -->
 <script src="https://cdn.jsdelivr.net/npm/pako@1/dist/pako.min.js"></script>
 <script src="/js/memory.jsx" type="text/babel"></script>
-{% endblock %}
 
-{% block content %}
-<div id="content"></div>
-{% endblock %}
+</body>
+</html>

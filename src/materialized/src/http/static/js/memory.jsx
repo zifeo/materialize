@@ -49,416 +49,258 @@ function useSQL(sql) {
   return [response, loading, error];
 }
 
-function Views() {
-  const queryMaterializedViews = `
-    SELECT
-      id, name, records
-    FROM
-      mz_catalog.mz_records_per_dataflow_global
-    WHERE
-      name NOT LIKE 'Dataflow: mz_catalog.%'
-    ORDER BY
-      records DESC
-  `;
+function Dataflows() {
+    const [stats, setStats] = useState(null);
+    const [addrs, setAddrs] = useState(null);
+    const [records, setRecords] = useState(null);
+    const [opers, setOpers] = useState(null);
+    const [chans, setChans] = useState(null);
+    const [elapsed, setElapsed] = useState(null);
+    const [view, setView] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+    const [page, setPage] = useState(null);
 
-  useEffect(() => {
-    const search = new URLSearchParams(location.search);
-    const dataflow = search.get('dataflow');
-    if (dataflow) {
-      setCurrent([dataflow, dataflow]);
-    }
-  }, []);
+    useEffect(() => {
 
-  const [current, setCurrent] = useState(null);
-  const [data, loading, error] = useSQL(queryMaterializedViews);
-
-  return (
-    <div>
-      {loading ? (
-        <div>Loading...</div>
-      ) : error ? (
-        <div>error: {error}</div>
-      ) : (
-        <div>
-          <table>
-            <thead>
-              <tr>
-                <th>dataflow id</th>
-                <th>index name</th>
-                <th>records</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.map((v) => (
-                <tr key={v[1]}>
-                  <td>{v[0]}</td>
-                  <td>
-                    <button
-                      onClick={() => {
-                        const params = new URLSearchParams(location.search);
-                        params.set('dataflow', v[0]);
-                        window.history.replaceState(
-                          {},
-                          '',
-                          `${location.pathname}?${params}`
-                        );
-
-                        setCurrent(v);
-                      }}
-                    >
-                      +
-                    </button>
-                    {v[1]}
-                  </td>
-                  <td>{v[2]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div>{current ? <View dataflow_id={current[0]} /> : null}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function View(props) {
-  const [stats, setStats] = useState(null);
-  const [addrs, setAddrs] = useState(null);
-  const [records, setRecords] = useState(null);
-  const [opers, setOpers] = useState(null);
-  const [chans, setChans] = useState(null);
-  const [elapsed, setElapsed] = useState(null);
-  const [view, setView] = useState(null);
-  const [graph, setGraph] = useState(null);
-  const [dot, setDot] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    setLoading(true);
-    setError(false);
-    setGraph(null);
-
-    const load = async () => {
-      const stats_table = await query(`
-        SELECT
-          name, records
-        FROM
-          mz_catalog.mz_records_per_dataflow_global
-        WHERE
-          id = ${props.dataflow_id};
-      `);
-      if (stats_table.rows.length !== 1) {
-        throw `unknown dataflow id ${props.dataflow_id}`;
-      }
-      const stats_row = stats_table.rows[0];
-      const stats = {
-        name: stats_row[0],
-        records: stats_row[1],
-      };
-      setStats(stats);
-
-      // 1) Find the address id's value for this dataflow (innermost subselect).
-      // 2) Find all address ids whose first slot value is that (second innermost subselect).
-      // 3) Find all address values in that set (top select).
-      // DISTINCT is useful (but not necessary) because it removes the duplicates
-      // caused by multiple workers.
-      const addr_table = await query(`
-        SELECT DISTINCT
-          id, slot, value
-        FROM
-          mz_catalog.mz_dataflow_operator_addresses
-        WHERE
-          id
-          IN (
-              SELECT
-                id
-              FROM
-                mz_catalog.mz_dataflow_operator_addresses
-              WHERE
-                slot = 0
-                AND value
-                  = (
-                      SELECT
-                        value
-                      FROM
-                        mz_catalog.mz_dataflow_operator_addresses
-                      WHERE
-                        id = ${props.dataflow_id}
-                    )
-            );
-      `);
-      // Map from id to address (array). {320: [11], 321: [11, 1]}.
-      const addrs = {};
-      addr_table.rows.forEach(([id, slot, value]) => {
-        if (!addrs[id]) {
-          addrs[id] = [];
+        if (!loading) {
+            return;
         }
-        addrs[id][slot] = value;
-      });
-      setAddrs(addrs);
 
-      const oper_table = await query(`
-        SELECT DISTINCT
-          id, name
-        FROM
-          mz_catalog.mz_dataflow_operators
-        WHERE
-          id
-          IN (
-              SELECT
-                id
-              FROM
-                mz_catalog.mz_dataflow_operator_addresses
-              WHERE
-                slot = 0
-                AND value
-                  = (
-                      SELECT
-                        value
-                      FROM
-                        mz_catalog.mz_dataflow_operator_addresses
-                      WHERE
-                        id = ${props.dataflow_id}
-                    )
+        // setLoading(true);
+        // setError(false);
+
+        const load = async () => {
+
+            // console.log("commencing load");
+
+            // 1) Find the address id's value for this dataflow (innermost subselect).
+            // 2) Find all address ids whose first slot value is that (second innermost subselect).
+            // 3) Find all address values in that set (top select).
+            // DISTINCT is useful (but not necessary) because it removes the duplicates
+            // caused by multiple workers.
+            const addr_table = await query(`
+                SELECT DISTINCT
+                    id, slot, value
+                FROM
+                    mz_catalog.mz_dataflow_operator_addresses;
+            `);
+            // Map from id to address (array). {320: [11], 321: [11, 1]}.
+            const addrs = {};
+            addr_table.rows.forEach(([id, slot, value]) => {
+                if (!addrs[id]) {
+                    addrs[id] = [];
+                }
+                addrs[id][slot] = value;
+            });
+            setAddrs(addrs);
+
+            const oper_table = await query(`
+                SELECT DISTINCT
+                    id, name
+                FROM
+                    mz_catalog.mz_dataflow_operators;
+            `);
+            // Map from id to operator name. {320: 'name'}.
+            const opers = Object.fromEntries(oper_table.rows);
+            setOpers(opers);
+
+            const chan_table = await query(`
+                SELECT DISTINCT
+                    id, source_node, target_node, source_port, target_port
+                FROM
+                    mz_catalog.mz_dataflow_channels;
+            `);
+            // {id: [source, target]}.
+            const chans = Object.fromEntries(
+                chan_table.rows.map(([id, source, target, source_port, target_port]) => [id, [source, target, source_port, target_port]])
             );
-      `);
-      // Map from id to operator name. {320: 'name'}.
-      const opers = Object.fromEntries(oper_table.rows);
-      setOpers(opers);
+            setChans(chans);
 
-      const chan_table = await query(`
-        SELECT DISTINCT
-          id, source_node, target_node
-        FROM
-          mz_catalog.mz_dataflow_channels
-        WHERE
-          id
-          IN (
-              SELECT
-                id
-              FROM
-                mz_catalog.mz_dataflow_operator_addresses
-              WHERE
-                slot = 0
-                AND value
-                  = (
-                      SELECT
-                        value
-                      FROM
-                        mz_catalog.mz_dataflow_operator_addresses
-                      WHERE
-                        id = ${props.dataflow_id}
-                    )
-            );
-      `);
-      // {id: [source, target]}.
-      const chans = Object.fromEntries(
-        chan_table.rows.map(([id, source, target]) => [id, [source, target]])
-      );
-      setChans(chans);
+            const records_table = await query(`
+                SELECT
+                    operator as id, sum(records)
+                FROM
+                    mz_catalog.mz_arrangement_sizes
+                GROUP BY
+                    id;
+            `);
+            setRecords(Object.fromEntries(records_table.rows));
 
-      const records_table = await query(`
-        SELECT
-          id, sum(records)
-        FROM
-          mz_catalog.mz_records_per_dataflow_operator
-        WHERE
-          dataflow_id = ${props.dataflow_id}
-        GROUP BY
-          id
-      `);
-      setRecords(Object.fromEntries(records_table.rows));
+            const elapsed_table = await query(`
+                SELECT
+                    id, sum(elapsed_ns)
+                FROM
+                    mz_catalog.mz_scheduling_elapsed
+                GROUP BY
+                    id;
+            `);
+            setElapsed(Object.fromEntries(elapsed_table.rows));
 
-      const elapsed_table = await query(`
-        SELECT
-          id, sum(elapsed_ns)
-        FROM
-          mz_catalog.mz_scheduling_elapsed
-        WHERE
-          id
-          IN (
-              SELECT
-                id
-              FROM
-                mz_catalog.mz_dataflow_operator_addresses
-              WHERE
-                slot = 0
-                AND value
-                  = (
-                      SELECT
-                        value
-                      FROM
-                        mz_catalog.mz_dataflow_operator_addresses
-                      WHERE
-                        id = ${props.dataflow_id}
-                    )
-            )
-        GROUP BY
-          id;
-      `);
-      setElapsed(Object.fromEntries(elapsed_table.rows));
+            try {
+                const view = await getCreateView(stats.name);
+                setView(view);
+            } catch (error) {
+                console.debug('could not get create view:', error);
+                setView(null);
+            }
 
-      try {
-        const view = await getCreateView(stats.name);
-        setView(view);
-      } catch (error) {
-        console.debug('could not get create view:', error);
-        setView(null);
-      }
+            console.log("Loaded");
+            setLoading(false);
+        };
 
-      setLoading(false);
-    };
-    load().catch((error) => {
-      setError(error);
-      setLoading(false);
+        load().catch((error) => {
+            console.log("ERROR", error);
+            setError(error);
+            setLoading(false);
+        });
     });
-  }, [props]);
 
-  useEffect(() => {
-    if (loading || error) {
-      return;
-    }
+    useEffect(() => {
 
-    // Create a map from address to id.
-    const lookup = Object.fromEntries(
-      Object.entries(addrs).map(([id, addr]) => [addrStr(addr), id])
-    );
-    const max_record_count = Math.max.apply(Math, Object.values(records));
-    const scopes = {};
-    // Find all the scopes.
-    Object.entries(opers).forEach(([id, name]) => {
-      if (name.startsWith('Region')) {
-        scopes[addrStr(addrs[id])] = [];
-      }
-    });
-    // Populate scopes.
-    Object.keys(opers).forEach((id) => {
-      const addr = addrs[id];
-      addr.pop();
-      const str = addrStr(addr);
-      if (str in scopes) {
-        scopes[str].push(id);
-      }
-    });
-    const clusters = Object.entries(scopes).map(([addr, ids]) => {
-      const scope_id = lookup[addr];
-      const sg = [`subgraph "cluster_${addr}" {`];
-      //sg.push(`label="${opers[scope_id]} (id: ${scope_id})"`);
-      sg.push(`_${scope_id};`);
-      ids.forEach((id) => {
-        sg.push(`_${id};`);
-      });
-      sg.push('}');
-      return sg.join('\n');
-    });
-    const edges = Object.entries(chans).map(([id, [source, target]]) => {
-      if (!(id in addrs)) {
-        return `// ${id} not in addrs`;
-      }
-      const from = makeAddrStr(addrs, id, source);
-      const to = makeAddrStr(addrs, id, target);
-      const from_id = lookup[from];
-      const to_id = lookup[to];
-      if (from_id === undefined) {
-        return `// ${from} or not in lookup`;
-      }
-      if (to_id === undefined) {
-        return `// ${to} or not in lookup`;
-      }
-      return `_${from_id} -> _${to_id};`;
-    });
-    const oper_labels = Object.entries(opers).map(([id, name]) => {
-      if (!addrs[id].length) {
-        return '';
-      }
-      const notes = [`id: ${id}`];
-      let style = '';
-      if (id in records) {
-        const record_count = records[id];
-        // Any operator that can have records will have a red border (even if it
-        // currently has 0 records). The fill color is a deeper red based on how many
-        // records this operator has compared to the operator with the most records.
-        const pct = record_count
-          ? Math.floor((record_count / max_record_count) * 0xff)
-          : 0;
-        const alpha = pct.toString(16).padStart(2, '0');
-        notes.push(`${record_count} records`);
-        style = `,style=filled,color=red,fillcolor="#ff0000${alpha}"`;
-      }
-      // Only display elapsed time if it's more than 1s.
-      if (id in elapsed && elapsed[id] > 1e9) {
-        notes.push(`${dispNs(elapsed[id])} elapsed`);
-      }
-      const maxLen = 40;
-      if (name.length > maxLen + 3) {
-        name = name.slice(0, maxLen) + '...';
-      }
-      return `_${id} [label="${name} (${notes.join(', ')})"${style}]`;
-    });
-    oper_labels.unshift('');
-    clusters.unshift('');
-    edges.unshift('');
-    const dot = `digraph {
-      ${clusters.join('\n')}
-      ${edges.join('\n')}
-      ${oper_labels.join('\n')}
-    }`;
-    console.debug(dot);
-    setDot(dot);
-    hpccWasm.graphviz.layout(dot, 'svg', 'dot').then(setGraph);
-  }, [loading]);
+        if (loading || error || (page != null)) {
+            return;
+        }
 
-  let viewText = null;
-  if (view) {
-    viewText = (
-      <div style={{ margin: '1em' }}>
-        View: {view.name}
-        <div style={{ padding: '.5em', backgroundColor: '#f5f5f5' }}>
-          {view.create}
-        </div>
+        const render = async() => {
+
+            console.log("Starting out");
+
+            // Establish maps to and from ids, addresses, and names.
+            const id_to_addr = Object.fromEntries(Object.entries(addrs).map(([id, addr]) => [id, addr]));
+            const id_to_name = Object.fromEntries(Object.entries(opers).map(([id, name]) => [id, name]));
+            const addr_to_id = Object.fromEntries(Object.entries(opers).map(([id, name]) => [addrStr(id_to_addr[id]), id]));
+            const max_record_count = Math.max.apply(Math, Object.values(records));
+
+            // Map scopes to children.
+            const scope_children = new Map();
+            const scope_channels = new Map();
+
+            Object.entries(opers).forEach(([id, name]) => {
+                let addr = id_to_addr[id];
+                if (addr != null) {
+                    // remove the last item (will re-insert later).
+                    let last = addr.splice(addr.length-1, 1)[0];
+                    let prefix_addr = addrStr(addr);
+                    if (!scope_children.has(prefix_addr)) { scope_children.set(prefix_addr, []); }
+                    if (!scope_channels.has(prefix_addr)) { scope_channels.set(prefix_addr, []); }
+                    scope_children.get(prefix_addr).push(last);
+                    addr.push(last);
+                }
+            });
+
+            // Map scopes to edges.
+            let channels = [...new Set(Object.entries(chans))];
+            channels.forEach(([id, st]) => {
+                if (id_to_addr[id] != null) {
+                    let addr = addrStr(id_to_addr[id]);
+                    if (!scope_children.has(addr)) { scope_channels.set(addr, []); }
+                    if (!scope_channels.has(addr)) { scope_channels.set(addr, []); }
+                    scope_channels.get(addr).push([st[0], st[1], st[2], st[3]]);
+                }
+            });
+
+            // console.log(scope_children);
+
+            console.log("RECORDS: ", records);
+
+            // Meant to render the scope identifier by addr, and its children recursively.
+            async function render_scope(addr) {
+
+                if (scope_channels.get(addr) != null) {
+
+                    let ids_seen = [];
+                    const edges = scope_channels.get(addr).map(([source, target, source_port, target_port]) => {
+                        // if either `source` or `target` are zero, they signify a scope input or output, respectively.
+                        let source1 = source != 0 ? addr_to_id[addr.concat(", ").concat(source)] : `input_${source_port}`;
+                        let target1 = target != 0 ? addr_to_id[addr.concat(", ").concat(target)] : `output_${target_port}`;
+                        ids_seen.push(source1);
+                        ids_seen.push(target1);
+                        return `${source1} -> ${target1}`;
+                    })
+
+                    const children = [];
+                    for (const id of scope_children.get(addr)) {
+                        let name = (addr == "") ? "".concat(id) : addr.concat(", ".concat(id));
+                        if (scope_channels.get(name) != null) {
+                            let id = addr_to_id[name];
+                            let text_name = id_to_name[id];
+                            children.push([id.concat(" : ").concat(text_name), await render_scope(name)]);
+                        }
+                    };
+
+                    edges.unshift('');
+
+                    const labels = ids_seen.map((id) => {
+                        let name = id_to_name[id];
+                        if (name != null) {
+                            if (scope_children.has(addrStr(id_to_addr[id]))) {
+                                // indicate subgraphs
+                                return `${id} [label="${id} : ${name}",shape=house,style=filled,color=green,fillcolor="#bbffbb"]`;
+                            } else {
+                                let my_records = records["".concat(id)];
+                                console.log("records: ", my_records, " for ", id);
+                                if (my_records != null) {
+                                    return `${id} [label= "${id} : ${name} \n\t records : ${my_records}",style=filled,color=red,fillcolor="#ffbbbb"]`;
+                                } else {
+                                    return `${id} [label="${id} : ${name}"]`;
+                                }
+                            }
+                        } else {
+                            return `${id} [label="${id}",shape=box,style=filled,color=blue,fillcolor="#bbbbff"]`;
+                        }
+                    });
+                    labels.unshift('');
+
+                    const dot = `digraph {
+                        ${edges.join('\n')}
+                        ${labels.join('\n')}
+                    }`;
+                    console.log(dot);
+                    let graph = await hpccWasm.graphviz.layout(dot, 'svg', 'dot');
+                    return (
+                        <div>
+                            { scope_channels.get(addr).length > 0 ? <div dangerouslySetInnerHTML={{ __html: graph } }></div> : <div></div> }
+                            { children.map(([name, div]) => (
+                                <div>
+                                <button class="collapsible" onClick={toggle_active}>{name}</button>
+                                <div class="content">
+                                {div}
+                                </div>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                } else {
+                    return (<div> </div> )
+                }
+            }
+
+            setPage(await render_scope(""));
+        };
+
+        console.log("rendering");
+        render().catch((error) => {
+            console.log("ERROR", error);
+            setError(error);
+        });
+    });
+
+    return (
+      <div style={{ marginTop: '2em' }}>
+        {loading ? (
+          <div>Loading...</div>
+        ) : error ? (
+          <div>error: {error}</div>
+        ) : (
+          <div>
+              {page}
+          </div>
+        )}
       </div>
     );
-  }
-
-  let dotLink = null;
-  if (dot) {
-    const link = new URL('https://materialize.com/memory-visualization/');
-    // Pass information as a JSON object to allow for easily extending this in
-    // the future. The hash is used instead of search because it reduces privacy
-    // concerns and avoids server-side URL size limits.
-    let data = { dot: dot };
-    if (view) {
-      data.view = view;
-    }
-    data = JSON.stringify(data);
-    // Compress data and encode as base64 so it's URL-safe.
-    data = pako.deflate(data, { to: 'string' });
-    link.hash = btoa(data);
-    dotLink = <a href={link}>share</a>;
-  }
-
-  return (
-    <div style={{ marginTop: '2em' }}>
-      {loading ? (
-        <div>Loading...</div>
-      ) : error ? (
-        <div>error: {error}</div>
-      ) : (
-        <div>
-          <h3>
-            Name: {stats.name}, dataflow_id: {props.dataflow_id}, records:{' '}
-            {stats.records}
-          </h3>
-          {dotLink}
-          {viewText}
-          <div dangerouslySetInnerHTML={{ __html: graph }}></div>
-        </div>
-      )}
-    </div>
-  );
 }
+
 
 async function getCreateView(dataflow_name) {
   // dataflow_name is the full name of the dataflow operator. It is generally
@@ -554,5 +396,17 @@ function dispNs(ns) {
   return parts.join('');
 }
 
-const content = document.getElementById('content');
-ReactDOM.render(<Views />, content);
+function toggle_active(e) {
+    console.log("toggling: ", e.target);
+    e.target.classList.toggle("active");
+    var content = e.target.nextElementSibling;
+    // a null maxHeight collapses the item.
+    if (content.style.maxHeight){
+        content.style.maxHeight = null;
+    } else {
+        content.style.maxHeight = "none";
+    }
+}
+
+const content = document.getElementById('content2');
+ReactDOM.render(<Dataflows />, content);

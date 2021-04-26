@@ -280,8 +280,8 @@ fn test_tail_progress() -> Result<(), Box<dyn Error>> {
     // Test that tailing non-nullable columns with progress information
     // turn sthem into nullable columns. See #6304.
     {
-        client_writes.batch_execute("CREATE TABLE t2 (data text NOT NULL)")?;
-        client_writes.batch_execute("INSERT INTO t2 VALUES ('data')")?;
+        client_writes.batch_execute("CREATE TABLE t2 (data text NOT NULL, other BYTEA)")?;
+        client_writes.batch_execute("INSERT INTO t2 VALUES ('data', 'other')")?;
         client_reads.batch_execute(
             "BEGIN;
             DECLARE c2 CURSOR FOR TAIL t2 WITH (PROGRESS);",
@@ -290,10 +290,14 @@ fn test_tail_progress() -> Result<(), Box<dyn Error>> {
         assert_eq!(data_row.get::<_, bool>("progressed"), false);
         assert_eq!(data_row.get::<_, i64>("diff"), 1);
         assert_eq!(data_row.get::<_, String>("data"), "data");
+        assert_eq!(data_row.get::<_, String>(3), "data");
+        assert_eq!(data_row.get::<_, &[u8]>("other"), "other".as_bytes());
+        assert_eq!(data_row.get::<_, &[u8]>(4), "other".as_bytes());
         let progress_row = client_reads.query_one("FETCH 1 c2", &[])?;
         assert_eq!(progress_row.get::<_, bool>("progressed"), true);
         assert_eq!(progress_row.get::<_, Option<i64>>("diff"), None);
         assert_eq!(progress_row.get::<_, Option<String>>("data"), None);
+        assert_eq!(progress_row.get::<_, Option<&[u8]>>("other"), None);
     }
 
     Ok(())

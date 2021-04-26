@@ -253,6 +253,7 @@ pub fn describe_tail(
     scx: &StatementContext,
     TailStatement { name, options, .. }: TailStatement<Raw>,
 ) -> Result<StatementDesc, anyhow::Error> {
+    println!("START DESCRIBE TAIL {:?}", name);
     let sql_object = scx.resolve_item(name)?;
     let options = TailOptions::try_from(options)?;
     let progress = options.progress.unwrap_or(false);
@@ -265,13 +266,16 @@ pub fn describe_tail(
         desc = desc.with_named_column("progressed", ScalarType::Bool.nullable(false));
     }
     desc = desc.with_named_column("diff", ScalarType::Int64.nullable(true));
+    println!("DESC {:?}, prog {}", sql_object.desc()?, progress);
     for (name, ty) in sql_object.desc()?.iter() {
         let mut ty = ty.clone();
         if progress {
             ty.nullable = true;
         }
+        println!("ADD COL {:?}", name);
         desc = desc.with_column(name.clone(), ty);
     }
+    println!("DESCRIBE DONE");
     Ok(StatementDesc::new(Some(desc)))
 }
 

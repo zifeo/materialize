@@ -54,10 +54,47 @@ pub enum TlsMode {
     VerifyUser,
 }
 
+/// Metrics that relate to the pgwire server.
+pub struct Metrics {
+    pub(crate) command_durations: prometheus::HistogramVec,
+    pub(crate) rows_returned: prometheus::UIntCounter,
+}
+
+impl Metrics {
+    /// Allocates a new metric struct for the server.
+    fn new() -> Self {
+        let command_durations = prometheus::HistogramVec::new(
+            prometheus::histogram_opts!(
+                "mz_command_durations",
+                "how long individual commands took"
+            ),
+            &["command", "status"],
+        )
+        .unwrap();
+        let rows_returned = prometheus::UIntCounter::new(
+            "mz_pg_sent_rows",
+            "total number of rows sent to clients from pgwire",
+        )
+        .unwrap();
+        Self {
+            command_durations,
+            rows_returned,
+        }
+    }
+
+    /// Registers the server's metrics to a prometheus registry.
+    pub fn register(&self, registry: &prometheus::Registry) -> Result<(), prometheus::Error> {
+        registry.register(Box::new(self.command_durations.clone()))?;
+        registry.register(Box::new(self.rows_returned.clone()))?;
+        Ok(())
+    }
+}
+
 /// A server that communicates with clients via the pgwire protocol.
 pub struct Server {
     tls: Option<TlsConfig>,
     coord_client: coord::Client,
+    metrics: Metrics,
 }
 
 impl Server {
@@ -66,7 +103,16 @@ impl Server {
         Server {
             tls: config.tls,
             coord_client: config.coord_client,
+            metrics: Metrics::new(),
         }
+    }
+
+    /// Adds the pgwire server's metrics to a given metrics registry.
+    pub fn register_metrics(
+        &self,
+        registry: &prometheus::Registry,
+    ) -> Result<(), prometheus::Error> {
+        self.metrics.register(registry)
     }
 
     pub async fn handle_connection<A>(&self, conn: A) -> Result<(), anyhow::Error>
@@ -97,6 +143,7 @@ impl Server {
                         coord_client,
                         conn: &mut conn,
                         version,
+                        metrics: &self.metrics,
                         params,
                     })
                     .await?;

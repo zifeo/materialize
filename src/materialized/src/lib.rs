@@ -239,10 +239,14 @@ pub async fn serve(config: Config) -> Result<Server, anyhow::Error> {
     let (drain_trigger, drain_tripwire) = oneshot::channel();
     tokio::spawn({
         let mut mux = Mux::new();
-        mux.add_handler(pgwire::Server::new(pgwire::Config {
+        let pgwire_server = pgwire::Server::new(pgwire::Config {
             tls: pgwire_tls,
             coord_client: coord_client.clone(),
-        }));
+        });
+        pgwire_server
+            .register_metrics(prometheus::default_registry())
+            .unwrap();
+        mux.add_handler(pgwire_server);
         mux.add_handler(http::Server::new(http::Config {
             tls: http_tls,
             coord_client: coord_client.clone(),

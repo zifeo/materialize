@@ -68,21 +68,6 @@ pub fn match_handshake(buf: &[u8]) -> bool {
     VERSIONS.contains(&version)
 }
 
-lazy_static! {
-    static ref COMMAND_DURATIONS: prometheus::HistogramVec = register_histogram_vec!(
-        "mz_command_durations",
-        "how long individual commands took",
-        &["command", "status"],
-        ore::stats::HISTOGRAM_BUCKETS.to_vec()
-    )
-    .unwrap();
-    static ref ROWS_RETURNED: prometheus::UIntCounter = register_uint_counter!(
-        "mz_pg_sent_rows",
-        "total number of rows sent to clients from pgwire"
-    )
-    .unwrap();
-}
-
 /// Parameters for the [`run`] function.
 pub struct RunParams<'a, A> {
     /// The TLS mode of the pgwire server.
@@ -93,6 +78,8 @@ pub struct RunParams<'a, A> {
     pub conn: &'a mut FramedConn<A>,
     /// The protocol version that the client provided in the startup message.
     pub version: i32,
+    /// The set of prometheus metrics reported by the server.
+    pub metrics: &'a crate::server::Metrics,
     /// The parameters that the client provided in the startup message.
     pub params: HashMap<String, String>,
 }
@@ -112,6 +99,7 @@ pub async fn run<'a, A>(
         coord_client,
         conn,
         version,
+        metrics,
         mut params,
     }: RunParams<'a, A>,
 ) -> Result<(), io::Error>
@@ -206,6 +194,7 @@ where
 
         let machine = StateMachine {
             conn,
+            metrics,
             coord_client: &mut coord_client,
         };
         machine.run().await
@@ -223,6 +212,7 @@ enum State {
 }
 
 struct StateMachine<'a, A> {
+    metrics: &'a crate::server::Metrics,
     conn: &'a mut FramedConn<A>,
     coord_client: &'a mut coord::SessionClient,
 }
@@ -318,7 +308,8 @@ where
             State::Ready | State::Done => "success",
             State::Drain => "error",
         };
-        COMMAND_DURATIONS
+        self.metrics
+            .command_durations
             .with_label_values(&[name, status])
             .observe(timer.elapsed().as_secs_f64());
 
@@ -1288,7 +1279,9 @@ where
             }
         }
 
-        ROWS_RETURNED.inc_by(u64::cast_from(total_sent_rows));
+        self.metrics
+            .rows_returned
+            .inc_by(u64::cast_from(total_sent_rows));
 
         let portal = self
             .coord_client

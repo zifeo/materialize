@@ -27,3 +27,4 @@ echo "AWS_SECRET_ACCESS_KEY=(${#AWS_SECRET_ACCESS_KEY} chars)"
 echo "AWS_SESSION_TOKEN=(${#AWS_SESSION_TOKEN} chars)"
 
 echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION (not set in this script)"
+echo "BLAHBLAH=$BLAHBLAH (not set in this script)"

@@ -14,5 +14,6 @@ steps:
     timeout_in_minutes: 10
     env:
       AWS_DEFAULT_REGION: us-east-2
+      BLAHBLAH: btv-east-2
     plugins:
        - ./ci/plugins/scratch-aws-access

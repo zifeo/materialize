@@ -94,6 +94,8 @@ def clean_up_ec2() -> None:
 
 
 def main() -> None:
+    import os
+    print(os.environ["AWS_DEFAULT_REGION"])
     clean_up_kinesis()
     clean_up_s3()
     clean_up_sqs()

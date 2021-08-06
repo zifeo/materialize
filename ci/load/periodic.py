@@ -7,8 +7,7 @@ from materialize import scratch
 
 def main() -> None:
     import os
-    import pprint
-    pprint.pprint(os.environ)
+    print(os.environ["AWS_DEFAULT_REGION"])
     desc = scratch.MachineDesc(
         name="chbench monthly",
         launch_script="MZ_WORKERS=4 bin/mzcompose --mz-find chbench run cloud-load-test",
